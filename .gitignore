@@ -1,0 +1,55 @@
+# Python
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+*.so
+*.egg
+*.egg-info/
+.eggs/
+*.manifest
+*.spec
+
+# Django
+db.sqlite3
+*.log
+*.pot
+*.pyc
+*.mo
+*.coverage
+.coverage.*
+*.pid
+*.seed
+*.json
+*.db
+
+# Django static/media
+/media
+/staticfiles
+/static
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Virtualenv
+venv/
+ENV/
+env/
+.venv/
+
+# IDEs & Editors
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.cache
+.pytest_cache/
+nosetests.xml
