@@ -24,9 +24,9 @@ db.sqlite3
 *.db
 
 # Django static/media
-/media
-/staticfiles
-/static
+backend/media
+backend/staticfiles
+backend/static
 
 # Environment
 .env
