@@ -9,6 +9,7 @@ class LoginUsersSerializer(serializers.ModelSerializer):
     class Meta:
         model = Account
         fields = [
+            "id",
             "email",
             "username",
             "company_name",
@@ -41,6 +42,7 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = Account
         fields = [
+            "id",
             "email",
             "username",
             "company_name",
