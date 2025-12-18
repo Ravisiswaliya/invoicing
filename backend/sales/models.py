@@ -112,7 +112,7 @@ class BillDetail(BaseTransactionDetail):
         "clients.Client", on_delete=models.CASCADE, related_name="client"
     )
     orderno = models.CharField(max_length=50, null=True, blank=True)
-    billno = models.CharField(max_length=150)
+    billno = models.CharField(max_length=150, unique=True)
     date = models.DateField(default=datetime.now)
     transportmode = models.CharField(max_length=10, null=True, blank=True)
     vehicleno = models.CharField(max_length=10, null=True, blank=True)
@@ -143,7 +143,7 @@ class BillDetail(BaseTransactionDetail):
 
 class QuotationDetail(BaseTransactionDetail):
     party = models.ForeignKey("clients.Client", on_delete=models.CASCADE)
-    quotationno = models.IntegerField(unique=True)
+    quotationno = models.CharField(max_length=150, unique=True)
     date = models.DateField(null=True, blank=True)
     subject = models.CharField(max_length=200)
     tc = models.CharField(

@@ -1,8 +1,8 @@
 from rest_framework import serializers
 from django.db import transaction
-from .models import QProductDetail, QuotationDetail
+from sales.models import QProductDetail, QuotationDetail
 from clients.serializers import ClientSerializer
-from .models import BillDetail, ProductDetail
+from sales.models import BillDetail, ProductDetail
 
 from clients.models import Client
 
@@ -73,10 +73,7 @@ class BaseTransactionSerializer(serializers.ModelSerializer):
         products_data = validated_data.pop(self.related_name, [])
         with transaction.atomic():
             instance = self.Meta.model.objects.create(**validated_data)
-            for prd in products_data:
-                self.product_model.objects.create(
-                    **{self.product_field: instance}, **prd
-                )
+            self._create_or_update_products(instance, products_data)
         return instance
 
     def update(self, instance, validated_data):
@@ -90,14 +87,15 @@ class BaseTransactionSerializer(serializers.ModelSerializer):
                 self.product_model.objects.filter(
                     **{self.product_field: instance}
                 ).delete()
-                for prd in products_data:
-                    self.product_model.objects.create(
-                        **{self.product_field: instance}, **prd
-                    )
+                self._create_or_update_products(instance, products_data)
 
         instance.refresh_from_db()
         instance.update_totals()
         return instance
+
+    def _create_or_update_products(self, instance, product_data):
+        for prd in products_data:
+            self.product_model.objects.create(**{self.product_field: instance}, **prd)
 
 
 class BillDetailSerializer(BaseTransactionSerializer):

@@ -17,8 +17,8 @@ from .serializers import (
     QuotationDetailSerializer,
     QProductDetailSerializer,
 )
-from .serializers import BillDetailSerializer, ProductDetailSerializer
-from .filters import BillFilter, QuotationFilter
+from sales.serializers import BillDetailSerializer, ProductDetailSerializer
+from sales.filters import BillFilter, QuotationFilter
 from utils.pdf_generator import generate_pdf
 
 

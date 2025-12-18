@@ -13,5 +13,6 @@ dependencies = [
     "djangorestframework-simplejwt>=5.5.1",
     "pdfkit>=1.0.0",
     "pillow>=12.0.0",
+    "pyjwt[crypto]>=2.10.1",
     "reportlab>=4.4.6",
 ]
