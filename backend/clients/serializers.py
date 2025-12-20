@@ -4,7 +4,7 @@ from users.serializers import UserSerializer
 
 
 class ClientSerializer(serializers.ModelSerializer):
-    # user = UserSerializer(read_only=True)
+    user = UserSerializer(read_only=True)
 
     class Meta:
         model = Client
@@ -23,8 +23,9 @@ class ClientSerializer(serializers.ModelSerializer):
             "statecode",
             "currency",
             "country",
+            "user",
         ]
-        # read_only_fields = ("user",)
+        read_only_fields = ("user",)
 
     def validate(self, attrs):
         if len(attrs["pincode"]) != 6:

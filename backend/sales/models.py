@@ -1,10 +1,14 @@
 from datetime import datetime
 from decimal import Decimal
 from django.db import models
+from django.contrib.contenttypes.fields import GenericRelation, GenericForeignKey
+from django.contrib.contenttypes.models import ContentType
 
 from clients.models import Client
-from .manager import BillManager
+from users.models import Account
+from sales.manager import BillManager
 from django.db.models import F, Sum, DecimalField, ExpressionWrapper
+
 
 UNIT_TYPES = (
     ("BAG", "BAGS"),
@@ -62,108 +66,6 @@ class TimeStampModel(models.Model):
     udate = models.DateTimeField(auto_now=True, auto_now_add=False)
 
 
-class BaseTransactionDetail(TimeStampModel):
-    total_gst_amount = models.DecimalField(
-        max_digits=9, decimal_places=2, null=True, blank=True
-    )
-    total_amount_after_gst = models.DecimalField(
-        max_digits=9, decimal_places=2, null=True, blank=True
-    )
-    total_units = models.CharField(max_length=30, null=True, blank=True)
-
-    class Meta:
-        abstract = True
-
-    def update_totals(self, related_name):
-        products = getattr(self, related_name)
-
-        # GST calculation: ( (cgst+sgst+igst)/100 * unit_price * quantity )
-        gst_expr = ExpressionWrapper(
-            (F("cgst") + F("sgst") + F("igst"))
-            * F("unit_price")
-            * F("product_quantity")
-            / 100.0,
-            output_field=DecimalField(max_digits=12, decimal_places=2),
-        )
-
-        # Base amount without tax
-        base_amount_expr = ExpressionWrapper(
-            F("unit_price") * F("product_quantity"),
-            output_field=DecimalField(max_digits=12, decimal_places=2),
-        )
-
-        aggregates = products.aggregate(
-            total_gst=Sum(gst_expr),
-            total_units=Sum("product_quantity"),
-            total_amount=Sum(base_amount_expr + gst_expr),
-        )
-
-        self.total_gst_amount = aggregates["total_gst"] or 0
-        self.total_units = str(aggregates["total_units"] or 0)
-        self.total_amount_after_gst = aggregates["total_amount"] or 0
-
-        self.save(
-            update_fields=["total_gst_amount", "total_amount_after_gst", "total_units"]
-        )
-
-
-class BillDetail(BaseTransactionDetail):
-    party = models.ForeignKey(
-        "clients.Client", on_delete=models.CASCADE, related_name="client"
-    )
-    orderno = models.CharField(max_length=50, null=True, blank=True)
-    billno = models.CharField(max_length=150, unique=True)
-    date = models.DateField(default=datetime.now)
-    transportmode = models.CharField(max_length=10, null=True, blank=True)
-    vehicleno = models.CharField(max_length=10, null=True, blank=True)
-    dateofsupply = models.DateField(null=True, blank=True)
-    placeofsupply = models.CharField(max_length=50, null=True, blank=True)
-    gstrc = models.IntegerField(null=True, blank=True)
-    tc = models.CharField(
-        max_length=500,
-        default="All Disputes subject to Hisar Jurisdiction. "
-        "Goods once sold will not be taken back or exchanged. "
-        "Interest @24% will be charged if bills not paid at presentation. E.& O.E.",
-    )
-    is_paid = models.BooleanField(default=False)
-
-    objects = BillManager()
-
-    def update_totals(self):
-        super().update_totals("productdetails")
-
-    def __str__(self):
-        return f"{self.billno}-{self.party.name}"
-
-    class Meta:
-        db_table = "billdetails"
-        ordering = ("-date", "-billno")
-        get_latest_by = ["-billno"]
-
-
-class QuotationDetail(BaseTransactionDetail):
-    party = models.ForeignKey("clients.Client", on_delete=models.CASCADE)
-    quotationno = models.CharField(max_length=150, unique=True)
-    date = models.DateField(null=True, blank=True)
-    subject = models.CharField(max_length=200)
-    tc = models.CharField(
-        max_length=1000,
-        default="1. 100% ADVANCE "
-        "2. Service within 7 days after order confirmation "
-        "3. Quoted Rate validity is 30 Days from quotation date",
-    )
-
-    def update_totals(self):
-        super().update_totals("quotationdetails")
-
-    def __str__(self):
-        return f"{self.quotationno}-{self.party.name}"
-
-    class Meta:
-        db_table = "quotaiondetails"
-        ordering = ("-quotationno",)
-
-
 class BaseProductDetail(TimeStampModel):
     hsncode = models.IntegerField(null=True, blank=True)
     cgst = models.DecimalField(max_digits=9, decimal_places=2, default=0)
@@ -219,25 +121,187 @@ class BaseProductDetail(TimeStampModel):
         )
 
 
-class ProductDetail(BaseProductDetail):
-    billno = models.ForeignKey(
-        "BillDetail", related_name="productdetails", on_delete=models.CASCADE
+class BaseTransactionDetail(TimeStampModel):
+    total_gst_amount = models.DecimalField(max_digits=9, decimal_places=2, default=0)
+    total_amount_after_gst = models.DecimalField(
+        max_digits=9, decimal_places=2, default=0
     )
+    total_units = models.PositiveIntegerField(default=0)
 
-    def __str__(self):
-        return f"{self.billno.billno}-{self.product_discription}"
+    products = GenericRelation("ProductDetail", related_query_name="document")
 
     class Meta:
-        db_table = "productdetails"
+        abstract = True
+
+    def update_totals(self):
+        from django.db.models import F, Sum, DecimalField, ExpressionWrapper
+
+        gst_expr = ExpressionWrapper(
+            (F("cgst") + F("sgst") + F("igst"))
+            * F("unit_price")
+            * F("product_quantity")
+            / 100,
+            output_field=DecimalField(max_digits=12, decimal_places=2),
+        )
+
+        base_expr = ExpressionWrapper(
+            F("unit_price") * F("product_quantity"),
+            output_field=DecimalField(max_digits=12, decimal_places=2),
+        )
+
+        agg = self.products.aggregate(
+            total_gst=Sum(gst_expr),
+            total_units=Sum("product_quantity"),
+            total_amount=Sum(base_expr + gst_expr),
+        )
+
+        self.total_gst_amount = agg["total_gst"] or 0
+        self.total_units = agg["total_units"] or 0
+        self.total_amount_after_gst = agg["total_amount"] or 0
+        self.save(
+            update_fields=["total_gst_amount", "total_units", "total_amount_after_gst"]
+        )
 
 
-class QProductDetail(BaseProductDetail):
-    quotationno = models.ForeignKey(
-        "QuotationDetail", related_name="quotationdetails", on_delete=models.CASCADE
+class BillDetail(BaseTransactionDetail):
+    party = models.ForeignKey(
+        "clients.Client", on_delete=models.CASCADE, related_name="client"
     )
+    created_by = models.ForeignKey(Account, on_delete=models.CASCADE)
+
+    orderno = models.CharField(max_length=50, null=True, blank=True)
+    billno = models.CharField(max_length=150, unique=True)
+    date = models.DateField(default=datetime.now)
+    transportmode = models.CharField(max_length=10, null=True, blank=True)
+    vehicleno = models.CharField(max_length=10, null=True, blank=True)
+    dateofsupply = models.DateField(null=True, blank=True)
+    placeofsupply = models.CharField(max_length=50, null=True, blank=True)
+    gstrc = models.IntegerField(null=True, blank=True)
+    tc = models.CharField(
+        max_length=500,
+        default="All Disputes subject to Hisar Jurisdiction. "
+        "Goods once sold will not be taken back or exchanged. "
+        "Interest @24% will be charged if bills not paid at presentation. E.& O.E.",
+    )
+    is_paid = models.BooleanField(default=False)
+
+    objects = BillManager()
+
+    def update_totals(self):
+        super().update_totals()
+
+    def __str__(self):
+        return f"{self.billno}-{self.party.name}"
+
+    class Meta:
+        db_table = "billdetails"
+        ordering = ("-date", "-billno")
+        get_latest_by = ["-billno"]
+
+
+class QuotationDetail(BaseTransactionDetail):
+    party = models.ForeignKey("clients.Client", on_delete=models.CASCADE)
+    created_by = models.ForeignKey(Account, on_delete=models.CASCADE)
+
+    quotationno = models.CharField(max_length=150, unique=True)
+    date = models.DateField(null=True, blank=True)
+    subject = models.CharField(max_length=200)
+    tc = models.CharField(
+        max_length=1000,
+        default="1. 100% ADVANCE "
+        "2. Service within 7 days after order confirmation "
+        "3. Quoted Rate validity is 30 Days from quotation date",
+    )
+
+    def update_totals(self):
+        super().update_totals()
+
+    def __str__(self):
+        return f"{self.quotationno}-{self.party.name}"
+
+    class Meta:
+        db_table = "quotaiondetails"
+        ordering = ("-quotationno",)
+
+
+class ProductDetail(BaseProductDetail):
+    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
+    object_id = models.PositiveIntegerField()
+    document = GenericForeignKey("content_type", "object_id")
 
     def __str__(self):
         return self.product_discription
 
     class Meta:
-        db_table = "qproductdetails"
+        db_table = "productdetails"
+
+
+# class BaseTransactionDetail(TimeStampModel):
+#     total_gst_amount = models.DecimalField(
+#         max_digits=9, decimal_places=2, null=True, blank=True
+#     )
+#     total_amount_after_gst = models.DecimalField(
+#         max_digits=9, decimal_places=2, null=True, blank=True
+#     )
+#     total_units = models.CharField(max_length=30, null=True, blank=True)
+
+#     class Meta:
+#         abstract = True
+
+#     def update_totals(self, related_name):
+#         products = getattr(self, related_name)
+
+#         # GST calculation: ( (cgst+sgst+igst)/100 * unit_price * quantity )
+#         # For total GST
+#         gst_expr = ExpressionWrapper(
+#             (F("cgst") + F("sgst") + F("igst"))
+#             * F("unit_price")
+#             * F("product_quantity")
+#             / 100.0,
+#             output_field=DecimalField(max_digits=12, decimal_places=2),
+#         )
+
+#         # Base amount without tax
+#         base_amount_expr = ExpressionWrapper(
+#             F("unit_price") * F("product_quantity"),
+#             output_field=DecimalField(max_digits=12, decimal_places=2),
+#         )
+
+#         # Final calculation
+#         aggregates = products.aggregate(
+#             total_gst=Sum(gst_expr),
+#             total_units=Sum("product_quantity"),
+#             total_amount=Sum(base_amount_expr + gst_expr),
+#         )
+
+#         self.total_gst_amount = aggregates["total_gst"] or 0
+#         self.total_units = str(aggregates["total_units"] or 0)
+#         self.total_amount_after_gst = aggregates["total_amount"] or 0
+
+#         self.save(
+#             update_fields=["total_gst_amount", "total_amount_after_gst", "total_units"]
+#         )
+
+
+# class ProductDetail(BaseProductDetail):
+#     billno = models.ForeignKey(
+#         "BillDetail", related_name="productdetails", on_delete=models.CASCADE
+#     )
+
+#     def __str__(self):
+#         return f"{self.billno.billno}-{self.product_discription}"
+
+#     class Meta:
+#         db_table = "productdetails"
+
+
+# class QProductDetail(BaseProductDetail):
+#     quotationno = models.ForeignKey(
+#         "QuotationDetail", related_name="quotationdetails", on_delete=models.CASCADE
+#     )
+
+#     def __str__(self):
+#         return self.product_discription
+
+#     class Meta:
+#         db_table = "qproductdetails"
